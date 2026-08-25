@@ -5,7 +5,8 @@ RNA-seq of hippocampus from humanized APOE3/3 and APOE4/4 knock-in mice, male an
 6, 12, and 18 months (12 conditions, 47 libraries, 555,008 nuclei x 27,153 genes).
 
 Processed data can be explored and downloaded at https://ucsftriad.org.
-Archived release: [ZENODO DOI].
+Archived on Zenodo: concept DOI [10.5281/zenodo.22103492](https://doi.org/10.5281/zenodo.22103492)
+(resolves to the latest version; this release, v1.0.0: [10.5281/zenodo.22103493](https://doi.org/10.5281/zenodo.22103493)).
 
 ## Software versions
 
