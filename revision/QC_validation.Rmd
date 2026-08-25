@@ -1,0 +1,325 @@
+---
+title: "QC validation & annotation panels (reviewer response)"
+author: "CPS"
+date: "2026-06-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.path = "../../results/figures/", dev = "png", dpi = 300)
+options(future.globals.maxSize = 1e11)
+Sys.setenv(R_MAX_VSIZE = "100Gb")
+```
+
+Panels for reviewer concerns:
+- **#1 / #2** QC metrics across axes of variability (Reviewer #3.1)
+- **#5** Annotation validation — dot plot / stacked violin, incl. myeloid subsets (Reviewer #1.2, #1-minor-2, #3.2)
+- **#6** Cluster/condition mixing — composition + **iLISI/cLISI** mixing scores (Reviewer #2)
+
+All figures are written to `manuscript/figures/` by the `fig.path` setting above.
+
+```{r libs}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+```
+
+## Load data
+```{r load}
+obj <- readRDS("../../data/processed/Emouse.rds")
+DefaultAssay(obj) <- "RNA"
+
+# condition label (genotype x sex x age = 12 groups) and ordered factors
+obj$group <- paste(obj$genotype, obj$sex, obj$age, sep = "_")
+obj$age   <- factor(obj$age, levels = c("06Mo", "12Mo", "18Mo"))
+
+# use the curated cell-type label; drop the technical "negative"/"hybrid" tags for marker panels
+ct_col <- "celltype"
+Idents(obj) <- ct_col
+
+dir.create("../../results/figures", showWarnings = FALSE, recursive = TRUE)
+qc <- c("nCount_RNA", "nFeature_RNA", "percent.mt", "log10GenesPerUMI")
+```
+
+---
+
+## 1. QC metrics across conditions (Reviewer #3.1)
+
+### 1a. Per-sample violins (47 samples) — sample-to-sample consistency
+```{r QC_per_sample_violin, fig.width = 14, fig.height = 11}
+p_ps <- VlnPlot(obj, features = qc, group.by = "orig.ident", pt.size = 0, ncol = 1) &
+  theme(axis.text.x = element_text(size = 5, angle = 90, hjust = 1),
+        axis.title.x = element_blank())
+p_ps
+```
+
+### 1b. QC metrics split by each axis of variability
+```{r QC_by_axis_violin, fig.width = 14, fig.height = 10}
+mk_axis <- function(grp) {
+  VlnPlot(obj, features = qc, group.by = grp, pt.size = 0, ncol = 4) &
+    theme(plot.title = element_text(size = 9))
+}
+(mk_axis("age") / mk_axis("sex") / mk_axis("genotype"))
+```
+
+### 1c. Joint QC scatter (covariates considered jointly)
+```{r QC_joint_scatter, fig.width = 12, fig.height = 5}
+s1 <- FeatureScatter(obj, "nCount_RNA", "nFeature_RNA", group.by = "orig.ident") +
+  NoLegend() + scale_x_log10() + scale_y_log10() + ggtitle("Depth vs complexity")
+s2 <- FeatureScatter(obj, "nCount_RNA", "percent.mt", group.by = "age") +
+  scale_x_log10() + ggtitle("Depth vs % mito")
+s1 | s2
+```
+
+---
+
+## 2. Cells recovered & QC distribution per sample (Reviewer #3.1)
+
+### 2a. Nuclei recovered per sample, faceted by age, colored by genotype x sex
+```{r cells_per_sample, fig.width = 13, fig.height = 6}
+cell_counts <- obj@meta.data %>%
+  count(orig.ident, genotype, sex, age, name = "nuclei")
+
+ggplot(cell_counts, aes(orig.ident, nuclei, fill = interaction(genotype, sex))) +
+  geom_col() +
+  facet_grid(~ age, scales = "free_x", space = "free") +
+  scale_fill_brewer(palette = "Set2", name = "genotype.sex") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, size = 6, hjust = 1, vjust = 0.5)) +
+  labs(x = NULL, y = "nuclei recovered")
+```
+
+### 2b. Median QC per sample (table-as-figure) to show no condition-driven drift
+```{r QC_summary_heatmap, fig.width = 11, fig.height = 7}
+qc_summary <- obj@meta.data %>%
+  group_by(orig.ident, genotype, sex, age) %>%
+  summarise(across(all_of(qc), median), nuclei = n(), .groups = "drop")
+
+qc_long <- tidyr::pivot_longer(qc_summary, all_of(qc),
+                               names_to = "metric", values_to = "median_value")
+
+ggplot(qc_long, aes(orig.ident, metric, fill = median_value)) +
+  geom_tile() +
+  geom_text(aes(label = round(median_value, 2)), size = 2) +
+  facet_grid(metric ~ age, scales = "free", space = "free_x") +
+  scale_fill_viridis_c() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, size = 6, hjust = 1, vjust = 0.5),
+        axis.text.y = element_blank(), strip.text.y = element_text(size = 7)) +
+  labs(x = NULL, y = NULL, fill = "per-sample\nmedian")
+```
+
+---
+
+## 5. Annotation validation — canonical markers (Reviewer #1.2, #1-minor-2, #3.2)
+
+Microglia are resolved beyond `Csf1r` alone, and macrophage/monocyte markers are
+included so the myeloid compartment can be evaluated (Reviewer #1.2).
+
+```{r marker_panels}
+markers <- list(
+  Excitatory  = c("Snap25", "Slc17a7", "Rbfox3"),
+  Inhibitory  = c("Gad1", "Gad2"),
+  Astrocyte   = c("Aqp4", "Gfap", "Slc1a3"),
+  Oligo       = c("Plp1", "Mbp", "Mog"),
+  OPC         = c("Pdgfra", "Olig1", "Olig2"),
+  Microglia   = c("Csf1r", "Ctss", "Tmem119", "P2ry12", "Cx3cr1"),
+  Macrophage  = c("Mrc1", "Lyve1", "Cd163", "Ms4a7"),
+  Monocyte    = c("Ly6c2", "Ccr2"),
+  Endothelial = c("Cldn5", "Flt1", "Pecam1"),
+  Mural       = c("Pdgfrb", "Rgs5", "Kcnj8", "Acta2"))
+
+# restrict to biologically annotated clusters via idents (no object copy -> memory safe)
+Idents(obj) <- "celltype"
+keep_ct <- setdiff(levels(factor(obj$celltype)), c("negative", "hybrid"))
+```
+
+### 5a. Dot plot
+```{r annot_dotplot, fig.width = 15, fig.height = 6}
+DotPlot(obj, features = markers, idents = keep_ct, cluster.idents = TRUE) +
+  RotatedAxis() +
+  theme(axis.text.x = element_text(size = 7), strip.text = element_text(size = 8)) +
+  labs(x = NULL, y = NULL)
+gc()
+```
+
+### 5b. Stacked violin
+```{r annot_stacked_violin, fig.width = 11, fig.height = 13}
+VlnPlot(obj, features = unlist(markers, use.names = FALSE),
+        idents = keep_ct, stack = TRUE, flip = TRUE, pt.size = 0) +
+  NoLegend() +
+  theme(axis.text.x = element_text(size = 8), axis.text.y = element_text(size = 7))
+gc()
+```
+
+---
+
+## 6. Cluster / condition mixing (Reviewer #2)
+
+### 6a. UMAP by cell type, split by genotype
+```{r umap_split_genotype, fig.width = 12, fig.height = 6}
+DimPlot(obj, group.by = "celltype", split.by = "genotype",
+        raster = TRUE, raster.dpi = c(600, 600)) +
+  ggtitle("Cell type by genotype")
+```
+
+### 6b. UMAP colored by sample (batch overlay)
+```{r umap_by_sample, fig.width = 8, fig.height = 6}
+DimPlot(obj, group.by = "orig.ident", raster = TRUE, raster.dpi = c(600, 600)) +
+  NoLegend() + ggtitle("Sample overlay (no condition-specific island)")
+```
+
+### 6c. Per-sample composition (quantitative, not eyeballed)
+```{r composition_per_sample, fig.width = 13, fig.height = 6}
+comp <- obj@meta.data %>% count(orig.ident, age, celltype)
+ggplot(comp, aes(orig.ident, n, fill = celltype)) +
+  geom_col(position = "fill") +
+  facet_grid(~ age, scales = "free_x", space = "free") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, size = 6, hjust = 1, vjust = 0.5)) +
+  labs(x = NULL, y = "proportion of nuclei")
+```
+
+### 6d. LISI mixing scores (Reviewer #2 — quantitative batch metric)
+
+We use the Local Inverse Simpson's Index (Korsunsky et al. 2019). For each nucleus,
+neighbours in PCA space are Gaussian-weighted to a fixed perplexity and the inverse
+Simpson index of a label is taken — the **effective number of categories** in the
+local neighbourhood.
+
+- **iLISI** on `orig.ident` (sample/batch): ranges 1 (no mixing) → 47 (all samples
+  equally represented locally). **Higher = better mixed.**
+- **cLISI** on `celltype`: ideal ≈ 1 (neighbourhoods are cell-type-pure).
+
+A self-contained R implementation is used so the result does not depend on the
+`lisi` package compiling (its pinned C++11 flag conflicts with current toolchains).
+
+```{r lisi_fun}
+# Pure-R LISI (Korsunsky et al. 2019). Returns effective #categories per cell.
+compute_lisi <- function(emb, labels, perplexity = 30) {
+  labels <- as.factor(labels)
+  k   <- perplexity * 3
+  knn <- FNN::get.knn(emb, k = k)
+  D   <- knn$nn.dist^2
+  idx <- knn$nn.index
+  n   <- nrow(emb); logU <- log(perplexity); out <- numeric(n)
+  for (i in seq_len(n)) {
+    Di <- D[i, ]; beta <- 1; betamin <- -Inf; betamax <- Inf
+    for (t in 1:50) {                              # Hbeta binary search (as in t-SNE)
+      P <- exp(-Di * beta); sumP <- sum(P)
+      if (sumP == 0) { P <- rep(0, k); H <- 0 } else {
+        H <- log(sumP) + beta * sum(Di * P) / sumP; P <- P / sumP }
+      if (abs(H - logU) < 1e-5) break
+      if (H > logU) { betamin <- beta; beta <- if (is.infinite(betamax)) beta*2 else (beta+betamax)/2 }
+      else          { betamax <- beta; beta <- if (is.infinite(betamin)) beta/2 else (beta+betamin)/2 }
+    }
+    sp <- tapply(P, labels[idx[i, ]], sum); sp[is.na(sp)] <- 0
+    out[i] <- 1 / sum(sp^2)                         # inverse Simpson
+  }
+  out
+}
+```
+
+The naive ceiling for iLISI is the number of samples (47), but that is unreachable:
+with a perplexity-30 neighbourhood (~30–90 cells) the inverse-Simpson index cannot
+represent 47 samples even if labels were random. The correct reference is therefore
+the **label-shuffled null** — iLISI recomputed on the *same* embedding after
+permuting `orig.ident` — which is the maximum mixing achievable on this graph. The
+floor is ~1 (total segregation).
+
+LISI on all 555k nuclei takes ~20 min per pass, so results are cached to
+`results/figures/`. Delete those `.rds` files to force a recompute.
+
+```{r lisi_compute}
+library(FNN)
+emb_s     <- Embeddings(obj, "pca")[, 1:15]
+val_cache  <- "../../results/figures/lisi_values_all_nuclei.rds"  # observed iLISI/cLISI/celltype
+null_cache <- "../../results/figures/ilisi_null_all_nuclei.rds"   # shuffled-null iLISI
+
+# --- observed (load cache or compute on ALL nuclei) ---
+if (file.exists(val_cache)) {
+  ldat0 <- readRDS(val_cache)
+  iLISI <- ldat0$iLISI; cLISI <- ldat0$cLISI
+} else {
+  iLISI <- compute_lisi(emb_s, obj$orig.ident)
+  cLISI <- compute_lisi(emb_s, obj$celltype)
+  saveRDS(data.frame(iLISI = iLISI, cLISI = cLISI, celltype = obj$celltype), val_cache)
+}
+
+# --- perfect-mixing null = achievable ceiling (load cache or compute) ---
+if (file.exists(null_cache)) {
+  iLISI_null <- readRDS(null_cache)
+} else {
+  set.seed(1)
+  iLISI_null <- compute_lisi(emb_s, sample(obj$orig.ident))
+  saveRDS(iLISI_null, null_cache)
+}
+
+n_samp    <- length(unique(obj$orig.ident))
+null_ceil <- median(iLISI_null)                # reference line for the boxplot
+ldat <- data.frame(
+  UMAP_1   = Embeddings(obj, "umap")[, 1],
+  UMAP_2   = Embeddings(obj, "umap")[, 2],
+  iLISI    = iLISI, cLISI = cLISI,
+  celltype = obj$celltype)
+
+cat(sprintf("iLISI observed (ideal=%d): median=%.2f mean=%.2f\n", n_samp, median(iLISI), mean(iLISI)))
+cat(sprintf("iLISI shuffled null (achievable ceiling): median=%.2f\n", null_ceil))
+cat(sprintf("observed / ceiling = %.2f  (1.0 = as mixed as theoretically possible)\n",
+            median(iLISI) / null_ceil))
+cat(sprintf("cLISI (celltype, ideal=1): median=%.2f mean=%.2f\n", median(cLISI), mean(cLISI)))
+```
+
+### 6e. iLISI map — *visualizing* sample mixing
+
+Bright = many effective samples in the local neighbourhood (well mixed); dark =
+few (sample-dominated).
+
+```{r ilisi_umap, fig.width = 8, fig.height = 6.5}
+ggplot(ldat, aes(UMAP_1, UMAP_2, color = iLISI)) +
+  geom_point(size = 0.25) +
+  scale_color_viridis_c(option = "viridis", name = "iLISI\n(eff. # samples)") +
+  theme_classic() +
+  labs(title = "Local sample mixing (iLISI, perplexity 30)",
+       subtitle = sprintf("median = %.1f of %d samples (higher = better mixed; n=%d nuclei)",
+                          median(iLISI), n_samp, length(iLISI)))
+```
+
+```{r ilisi_boxplot, fig.width = 8, fig.height = 5}
+ggplot(ldat, aes(reorder(celltype, iLISI, median), iLISI, fill = celltype)) +
+  geom_boxplot(outlier.size = 0.2) +
+  geom_hline(yintercept = null_ceil, linetype = "dashed", color = "red") +
+  coord_flip() + theme_bw() + NoLegend() +
+  labs(x = NULL, y = "iLISI (effective # samples)",
+       title = "Sample mixing per cell type",
+       subtitle = sprintf("red dashed = achievable ceiling (shuffled null = %.1f); floor = 1", null_ceil))
+```
+
+### 6f. Observed vs label-shuffled null — mixing is near the achievable ceiling
+
+```{r ilisi_null_compare, fig.width = 6, fig.height = 5}
+cdat <- rbind(
+  data.frame(group = "observed", iLISI = iLISI),
+  data.frame(group = "shuffled null", iLISI = iLISI_null))
+
+ggplot(cdat, aes(group, iLISI, fill = group)) +
+  geom_violin(trim = FALSE, alpha = 0.6) +
+  geom_boxplot(width = 0.15, outlier.shape = NA) +
+  geom_hline(yintercept = 1, linetype = "dotted") +
+  annotate("text", x = 0.6, y = 1.6, label = "floor = 1 (no mixing)", size = 3, hjust = 0) +
+  scale_fill_manual(values = c(observed = "#0072B2", `shuffled null` = "grey70")) +
+  theme_bw() + NoLegend() +
+  labs(x = NULL, y = "iLISI (effective # samples)",
+       title = "Observed mixing vs achievable ceiling",
+       subtitle = sprintf("observed median %.1f = %.0f%% of shuffled ceiling %.1f (ideal 47 is unreachable)",
+                          median(iLISI), 100 * median(iLISI) / null_ceil, null_ceil))
+```
+
+---
+
+## Session info
+```{r session}
+sessionInfo()
+```
