@@ -4,7 +4,10 @@ Analysis code for Li et al., "Tri-AD" (Nature Communications, in revision). Sing
 RNA-seq of hippocampus from humanized APOE3/3 and APOE4/4 knock-in mice, male and female, at
 6, 12, and 18 months (12 conditions, 47 libraries, 555,008 nuclei x 27,153 genes).
 
-Processed data can be explored and downloaded at https://ucsftriad.org.
+Per-library Cell Ranger count matrices (`barcodes.tsv.gz`, `features.tsv.gz`, `matrix.mtx.gz` for
+each of the 47 libraries) and the animal metadata sheet are deposited on figshare under CC BY 4.0:
+https://figshare.com/s/5920b15bce791e586c28 (private reviewer link; a public DOI will replace it on
+publication). Processed data can be explored and downloaded at https://ucsftriad.org.
 Archived on Zenodo: concept DOI [10.5281/zenodo.22103492](https://doi.org/10.5281/zenodo.22103492)
 (resolves to the latest version; this release, v1.0.0: [10.5281/zenodo.22103493](https://doi.org/10.5281/zenodo.22103493)).
 
@@ -12,9 +15,10 @@ Archived on Zenodo: concept DOI [10.5281/zenodo.22103492](https://doi.org/10.528
 
 ### Original pipeline (scripts 1 to 6, run January 2023)
 
-- Cell Ranger 4.0.0 (`cellranger count`, default parameters) against a custom mm10-1.2.0
-  reference including introns. Alignment is not repeated by these scripts; they start from the
-  per-library count matrices.
+- Cell Ranger 7.0.0 (`cellranger count`, run separately per library, `--include-introns true`)
+  against the 10x Genomics pre-built mouse reference `refdata-gex-mm10-2020-A` (mm10 genome,
+  GENCODE vM23 / Ensembl 98 annotation). Alignment is not repeated by these scripts; they start
+  from the per-library count matrices.
 - Seurat v4.0.2 (version recorded inside the deposited Seurat object), sctransform v2
   (`SCTransform(vst.flavor = "v2")`).
 - The full command log recorded in the deposited object (function calls, parameters, seeds,
