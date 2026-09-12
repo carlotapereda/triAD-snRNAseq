@@ -7,7 +7,7 @@ from scipy.stats import zscore
 from statsmodels.stats.multitest import multipletests
 BASE=Path("results/abundance"); OUT=BASE/"glm"; OUT.mkdir(parents=True,exist_ok=True); SK="orig.ident"
 cov=pd.read_csv(BASE/"sample_covariates_inh.csv").set_index(SK)
-cov["nCount_z"]=zscore(cov["med_nCount"]); cov["mt_z"]=zscore(cov["med_percent_mt"])
+cov["nCount_z"]=zscore(cov["med_nCount"]); cov["mt_z"]=zscore(cov["mean_percent_mt"])
 cov["genoE44"]=(cov["genotype"]=="E44").astype(float); cov["sexF"]=(cov["sex"]=="Female").astype(float)
 cov["age12"]=(cov["age"]=="12Mo").astype(float); cov["age18"]=(cov["age"]=="18Mo").astype(float)
 cov["geno_sex"]=cov["genoE44"]*cov["sexF"]; cov["geno_age12"]=cov["genoE44"]*cov["age12"]; cov["geno_age18"]=cov["genoE44"]*cov["age18"]

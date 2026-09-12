@@ -16,7 +16,7 @@ SAMPLE_KEY = "orig.ident"
 N_DRAWS, N_TUNE, TARGET_ACCEPT, CHAINS, SEED = 2000, 2000, 0.95, 4, 42
 
 cov = pd.read_csv(BASE / "sample_covariates.csv").set_index(SAMPLE_KEY)
-cov["nCount_z"] = zscore(cov["med_nCount"]); cov["mt_z"] = zscore(cov["med_percent_mt"])
+cov["nCount_z"] = zscore(cov["med_nCount"]); cov["mt_z"] = zscore(cov["mean_percent_mt"])
 # design: genotype (E33 ref), sex (Male ref), age (06Mo ref), + interactions + nuisance
 cov["genoE44"] = (cov["genotype"] == "E44").astype(float)
 cov["sexF"]    = (cov["sex"] == "Female").astype(float)
