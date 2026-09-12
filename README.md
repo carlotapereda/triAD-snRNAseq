@@ -72,6 +72,7 @@ Analyses added during peer review, in `revision/`:
 | Script | Purpose | Inputs | Outputs |
 |--------|---------|--------|---------|
 | `QC_validation.Rmd` | Sample mixing (iLISI/cLISI), QC distributions, annotation marker panels | `Emouse.rds` | QC and mixing figures |
+| `cellranger_metrics_figures.R` | Per-library Cell Ranger sequencing and mapping metrics across conditions; three-way ANOVA (genotype x sex x age, library = unit, n = 47) | Per-library metrics parsed from the 47 Cell Ranger `web_summary.html` files; per-library QC summary | ANOVA and condition summary tables (CSV); Extended Data Fig. 1q |
 | `resolution_sweep.R`, `stability_fig_from_labels.R` | Reclustering at resolutions 0.3 to 1.0; ARI and nestedness | `Emouse.rds` | Stability figures |
 | `umap_and_elbow.R` | Labeled UMAP, vascular highlight, PCA elbow | `Emouse.rds` | UMAP and elbow figures |
 | `subtype_and_oligo_validation.R` | Oligodendrocyte identity, DAM/DAA/DAO scores, microglia and vascular subsets | `Emouse.rds` | Validation figures and tables |
